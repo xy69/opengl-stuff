@@ -4,6 +4,7 @@
 #include <cstdarg>
 #include <ctime>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -27,10 +28,9 @@ namespace logging {
 
 void Initialize() {
     try {
-        // Create logs directory
-#ifdef _WIN32
-        CreateDirectoryA("logs", nullptr);
-#endif
+        // Create logs directory (cross-platform)
+        std::error_code ec;
+        std::filesystem::create_directories("logs", ec);
 
         // Generate timestamped filename
         const auto now = std::chrono::system_clock::now();
@@ -50,9 +50,7 @@ void Initialize() {
         LogMessage("INFO", "Logging initialized");
 
     } catch (...) {
-#ifdef _WIN32
-        OutputDebugStringA("Log init failed");
-#endif
+        // swallow
     }
 }
 
@@ -114,9 +112,7 @@ void LogMessage(const std::string& level, const std::string& message) {
         recentLogs.pop_front();
     }
 
-#ifdef _WIN32
-    OutputDebugStringA((logEntry + "\n").c_str());
-#endif
+    // Optional: platform-specific debug output could be added here
 }
 
 std::vector<std::string> GetRecentLogs(std::size_t maxLines) {

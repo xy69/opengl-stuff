@@ -1,12 +1,11 @@
 #pragma once
-#include <GL/gl.h>
-#include <windows.h>
 
-#ifdef USE_IMGUI
-#include "imgui.h"
-#include "imgui_impl_opengl3.h"
-#include "imgui_impl_win32.h"
-#endif
+// GLEW provides OpenGL function declarations
+#include <GL/glew.h>
+
+#include <string>
+
+struct GLFWwindow;
 
 struct Camera {
     float x, y, z;
@@ -20,33 +19,26 @@ struct Color {
 
 class Renderer {
   public:
-    bool Initialize(HWND hwnd);
+    bool Initialize(GLFWwindow* window);
     void Render(const Camera& camera, Color& color);
-    void Present();
     void Cleanup();
 
   private:
-    HDC hdc;
-    HGLRC hglrc;
+    GLFWwindow* window = nullptr;
     unsigned int shaderProgram;
-    unsigned int gridVAO, cubeVAO, crosshairVAO, tracerVAO, tracerVBO;
+    unsigned int gridVAO, cubeVAO, crosshairVAO, crosshairVBO, tracerVAO, tracerVBO;
     int gridIndicesCount;
 
     // Terrain buffers
     unsigned int terrainVBO = 0, terrainEBO = 0;
 
-    void LoadOpenGLFunctions();
     unsigned int CreateShader(const char* vertexSource, const char* fragmentSource);
+    unsigned int CreateShaderFromFiles(const char* vertexPath, const char* fragmentPath);
+    static std::string ReadTextFile(const char* path);
     void CreateGrid();
     void CreateCube();
     void CreateCrosshair();
     // Update tracer line in screen space (NDC). Endpoints are in range [-1,1].
     void UpdateTracerNDC(float x1, float y1, float x2, float y2);
     float SimpleNoise(float x, float y);
-
-#ifdef USE_IMGUI
-    void InitImGui(HWND hwnd);
-    void RenderImGui(const Camera& camera, Color& color);
-    void ShutdownImGui();
-#endif
 };

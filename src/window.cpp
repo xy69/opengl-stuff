@@ -1,229 +1,213 @@
 #include "window.h"
 
-#include <GL/gl.h>
-#include <shellapi.h>
-#include <windows.h>
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
 
 #include <cmath>
-#include <cstdio>
 
 #include "logger.h"
 #include "renderer.h"
 
 #ifdef USE_IMGUI
+#include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
-#include "backends/imgui_impl_win32.h"
 #include "imgui.h"
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
-                                                             UINT msg,
-                                                             WPARAM wParam,
-                                                             LPARAM lParam);
 #endif
 
 static Renderer renderer;
 static Camera camera = {0.0f, 0.5f, -2.0f, 0.0f, 0.0f, 0.02f};
 static Color currentColor = {1.0f, 0.5f, 0.0f};
-static bool mouseCaptured = false;  // Start with mouse free for ImGui
-static int lastMouseX = 400, lastMouseY = 300;
 
-// Legacy button IDs removed; ImGui is used instead when enabled
-
-LRESULT CALLBACK Window::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-#ifdef USE_IMGUI
-    if (ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam))
-        return true;
-#endif
-
-    switch (uMsg) {
-        case WM_DESTROY:
-            LOG_INFO("WM_DESTROY received, quitting");
-            PostQuitMessage(0);
-            return 0;
-
-        case WM_COMMAND:
-            return 0;
-
-        case WM_LBUTTONDOWN:
-#ifdef USE_IMGUI
-            // Don't capture mouse if ImGui wants it
-            if (ImGui::GetIO().WantCaptureMouse) {
-                return 0;
-            }
-#endif
-            if (!mouseCaptured) {
-                mouseCaptured = true;
-                LOG_INFO("Mouse captured");
-                ShowCursor(FALSE);
-                RECT rect;
-                GetClientRect(hwnd, &rect);
-                ClientToScreen(hwnd, (POINT*)&rect.left);
-                ClientToScreen(hwnd, (POINT*)&rect.right);
-                ClipCursor(&rect);
-                SetCapture(hwnd);
-            }
-            return 0;
-
-        case WM_MOUSEMOVE:
-            if (mouseCaptured) {
-                int mouseX = LOWORD(lParam);
-                int mouseY = HIWORD(lParam);
-
-                float deltaX = (mouseX - lastMouseX) * 0.002f;
-                float deltaY = (mouseY - lastMouseY) * 0.002f;
-
-                camera.yaw += deltaX;
-                camera.pitch += deltaY;
-
-                if (camera.pitch > 1.5f)
-                    camera.pitch = 1.5f;
-                if (camera.pitch < -1.5f)
-                    camera.pitch = -1.5f;
-
-                // Recenter to the client area center
-                RECT rect;
-                GetClientRect(hwnd, &rect);
-                lastMouseX = rect.right / 2;
-                lastMouseY = rect.bottom / 2;
-                POINT center = {lastMouseX, lastMouseY};
-                ClientToScreen(hwnd, &center);
-                SetCursorPos(center.x, center.y);
-            }
-            return 0;
-
-        case WM_SIZE:
-            if (wParam != SIZE_MINIMIZED) {
-                RECT rect;
-                GetClientRect(hwnd, &rect);
-                LOG_INFO("WM_SIZE viewport %dx%d", rect.right, rect.bottom);
-                glViewport(0, 0, rect.right, rect.bottom);
-            }
-            return 0;
-    }
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    // Update the GL viewport to match the framebuffer size to avoid distortion
+    glViewport(0, 0, width, height);
 }
 
-bool Window::Create(HINSTANCE hInstance, int nCmdShow) {
-#ifdef USE_IMGUI
-    LOG_INFO("[window.cpp] USE_IMGUI is defined");
-#else
-    LOG_WARN("[window.cpp] USE_IMGUI is NOT defined");
-#endif
-    const char* className = "OpenGLWindow";
-
-    WNDCLASS wc = {};
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = className;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-
-    RegisterClass(&wc);
-
-    hwnd = CreateWindowEx(0,
-                          className,
-                          "OpenGL Terrain",
-                          WS_OVERLAPPEDWINDOW,
-                          CW_USEDEFAULT,
-                          CW_USEDEFAULT,
-                          800,
-                          600,
-                          NULL,
-                          NULL,
-                          hInstance,
-                          NULL);
-
-    if (!hwnd) {
-        LOG_ERROR("CreateWindowEx failed");
+bool Window::Create(int width, int height, const char* title) {
+    if (!glfwInit()) {
+        LOG_ERROR("Failed to initialize GLFW");
         return false;
     }
 
-    ShowWindow(hwnd, nCmdShow);
+#if __APPLE__
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#else
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#endif
+
+    window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    if (!window) {
+        LOG_ERROR("Failed to create GLFW window");
+        glfwTerminate();
+        return false;
+    }
+
+    glfwMakeContextCurrent(window);
+
+    if (glewInit() != GLEW_OK) {
+        LOG_ERROR("Failed to initialize GLEW");
+        return false;
+    }
+
+    glfwSwapInterval(1);  // vsync
+
+    int fbw = 0, fbh = 0;
+    glfwGetFramebufferSize(window, &fbw, &fbh);
+    glViewport(0, 0, fbw, fbh);
+
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    glfwSetWindowUserPointer(window, this);
 
     LOG_INFO("Initializing renderer");
-    renderer.Initialize(hwnd);
+    renderer.Initialize(window);
 
-    RECT rect;
-    GetClientRect(hwnd, &rect);
-    glViewport(0, 0, rect.right, rect.bottom);
+#ifdef USE_IMGUI
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
+#endif
+
+    // Start with mouse captured for FPS-style look; user can toggle with ESC
+    ToggleMouseCapture(true);
 
     return true;
 }
 
+void Window::ToggleMouseCapture(bool capture) {
+    mouseCaptured = capture;
+    if (mouseCaptured) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        glfwGetCursorPos(window, &lastMouseX, &lastMouseY);
+    } else {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+}
+
 void Window::Run() {
     LOG_INFO("Entering main loop");
-    MSG msg = {};
-    bool running = true;
-    while (running) {
-        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) {
-                LOG_INFO("WM_QUIT received");
-                running = false;
-                break;
-            }
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
 
-        // Handle movement
-        float cosYaw = cos(camera.yaw), sinYaw = sin(camera.yaw);
-        float cosPitch = cos(camera.pitch);
-
+        // Keyboard movement
+        float cosYaw = cosf(camera.yaw), sinYaw = sinf(camera.yaw);
+        float cosPitch = cosf(camera.pitch);
         float frontX = cosYaw * cosPitch;
         float frontZ = sinYaw * cosPitch;
         float rightX = -sinYaw;
         float rightZ = cosYaw;
 
-        if (GetAsyncKeyState('W') & 0x8000) {
+        auto key = [&](int k) { return glfwGetKey(window, k) == GLFW_PRESS; };
+        if (key(GLFW_KEY_W)) {
             camera.x -= rightX * camera.speed;
             camera.z -= rightZ * camera.speed;
         }
-        if (GetAsyncKeyState('S') & 0x8000) {
+        if (key(GLFW_KEY_S)) {
             camera.x += rightX * camera.speed;
             camera.z += rightZ * camera.speed;
         }
-        if (GetAsyncKeyState('A') & 0x8000) {
+        if (key(GLFW_KEY_A)) {
             camera.x -= frontX * camera.speed;
             camera.z -= frontZ * camera.speed;
         }
-        if (GetAsyncKeyState('D') & 0x8000) {
+        if (key(GLFW_KEY_D)) {
             camera.x += frontX * camera.speed;
             camera.z += frontZ * camera.speed;
         }
-        if (GetAsyncKeyState(VK_SPACE) & 0x8000)
+        if (key(GLFW_KEY_SPACE))
             camera.y += camera.speed;
-        if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+        if (key(GLFW_KEY_LEFT_SHIFT))
             camera.y -= camera.speed;
 
-        // Handle escape to toggle mouse capture for ImGui
-        static bool escapePressed = false;
-        if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-            if (!escapePressed) {
-                escapePressed = true;
-                if (mouseCaptured) {
-                    mouseCaptured = false;
-                    LOG_INFO("Mouse released for ImGui");
-                    ShowCursor(TRUE);
-                    ClipCursor(NULL);
-                    ReleaseCapture();
-                } else {
-                    mouseCaptured = true;
-                    LOG_INFO("Mouse recaptured");
-                    ShowCursor(FALSE);
-                    RECT rect;
-                    GetClientRect(hwnd, &rect);
-                    ClientToScreen(hwnd, (POINT*)&rect.left);
-                    ClientToScreen(hwnd, (POINT*)&rect.right);
-                    ClipCursor(&rect);
-                    SetCapture(hwnd);
-                }
+        static bool escDown = false;
+        if (key(GLFW_KEY_ESCAPE)) {
+            if (!escDown) {
+                escDown = true;
+                ToggleMouseCapture(!mouseCaptured);
             }
         } else {
-            escapePressed = false;
+            escDown = false;
         }
 
+        // Mouse look when captured
+        if (mouseCaptured) {
+            double x, y;
+            glfwGetCursorPos(window, &x, &y);
+            float deltaX = float(x - lastMouseX) * 0.002f;
+            float deltaY = float(y - lastMouseY) * 0.002f;
+            camera.yaw += deltaX;
+            camera.pitch += deltaY;
+            if (camera.pitch > 1.5f)
+                camera.pitch = 1.5f;
+            if (camera.pitch < -1.5f)
+                camera.pitch = -1.5f;
+            lastMouseX = x;
+            lastMouseY = y;
+        }
+
+#ifdef USE_IMGUI
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(300, 150), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Controls");
+        ImGui::Text("Camera: (%.2f, %.2f, %.2f)", camera.x, camera.y, camera.z);
+        ImGui::ColorEdit3("Cube Color", &currentColor.r);
+        ImGui::Text("Press ESC to toggle mouse capture.");
+        ImGui::End();
+
+        static bool show_logs = true;
+        if (show_logs) {
+            ImGui::SetNextWindowPos(ImVec2(10, 170), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_FirstUseEver);
+            ImGui::Begin("Logs", &show_logs);
+
+            static bool auto_scroll = true;
+            ImGui::Checkbox("Auto-scroll", &auto_scroll);
+            ImGui::Separator();
+            ImGui::BeginChild(
+                "LogScrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+            auto logs = logging::GetRecentLogs(200);
+            for (const auto& log : logs) {
+                ImGui::TextUnformatted(log.c_str());
+            }
+
+            if (auto_scroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+                ImGui::SetScrollHereY(1.0f);
+            }
+
+            ImGui::EndChild();
+            ImGui::End();
+        }
+#endif
+
         renderer.Render(camera, currentColor);
-        renderer.Present();
+
+#ifdef USE_IMGUI
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+#endif
+
+        glfwSwapBuffers(window);
     }
     LOG_INFO("Exiting main loop");
     renderer.Cleanup();
+#ifdef USE_IMGUI
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+#endif
+    glfwDestroyWindow(window);
+    glfwTerminate();
 }

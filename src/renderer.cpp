@@ -1,161 +1,26 @@
 #include "renderer.h"
 
+#include <GLFW/glfw3.h>
+
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 #include "logger.h"
 
 #ifdef USE_IMGUI
+#include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
-#include "backends/imgui_impl_win32.h"
 #include "imgui.h"
 #endif
-
-// OpenGL constants
-#define GL_ARRAY_BUFFER 0x8892
-#define GL_ELEMENT_ARRAY_BUFFER 0x8893
-#define GL_STATIC_DRAW 0x88E4
-#define GL_DYNAMIC_DRAW 0x88E8
-#define GL_VERTEX_SHADER 0x8B31
-#define GL_FRAGMENT_SHADER 0x8B30
-
-// OpenGL function pointers
-typedef void(APIENTRY* PFNGLGENBUFFERSPROC)(GLsizei n, GLuint* buffers);
-typedef void(APIENTRY* PFNGLBINDBUFFERPROC)(GLenum target, GLuint buffer);
-typedef void(APIENTRY* PFNGLBUFFERDATAPROC)(GLenum target,
-                                            ptrdiff_t size,
-                                            const void* data,
-                                            GLenum usage);
-typedef void(APIENTRY* PFNGLGENVERTEXARRAYSPROC)(GLsizei n, GLuint* arrays);
-typedef void(APIENTRY* PFNGLBINDVERTEXARRAYPROC)(GLuint array);
-typedef void(APIENTRY* PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint index);
-typedef void(APIENTRY* PFNGLVERTEXATTRIBPOINTERPROC)(GLuint index,
-                                                     GLint size,
-                                                     GLenum type,
-                                                     GLboolean normalized,
-                                                     GLsizei stride,
-                                                     const void* pointer);
-typedef GLuint(APIENTRY* PFNGLCREATESHADERPROC)(GLenum type);
-typedef void(APIENTRY* PFNGLSHADERSOURCEPROC)(GLuint shader,
-                                              GLsizei count,
-                                              const char* const* string,
-                                              const GLint* length);
-typedef void(APIENTRY* PFNGLCOMPILESHADERPROC)(GLuint shader);
-typedef GLuint(APIENTRY* PFNGLCREATEPROGRAMPROC)(void);
-typedef void(APIENTRY* PFNGLATTACHSHADERPROC)(GLuint program, GLuint shader);
-typedef void(APIENTRY* PFNGLLINKPROGRAMPROC)(GLuint program);
-typedef void(APIENTRY* PFNGLUSEPROGRAMPROC)(GLuint program);
-typedef GLint(APIENTRY* PFNGLGETUNIFORMLOCATIONPROC)(GLuint program, const char* name);
-typedef void(APIENTRY* PFNGLUNIFORM3FPROC)(GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
-typedef void(APIENTRY* PFNGLUNIFORMMATRIX4FVPROC)(GLint location,
-                                                  GLsizei count,
-                                                  GLboolean transpose,
-                                                  const GLfloat* value);
-typedef void(APIENTRY* PFNGLBUFFERSUBDATAPROC)(GLenum target,
-                                               ptrdiff_t offset,
-                                               ptrdiff_t size,
-                                               const void* data);
-typedef BOOL(WINAPI* PFNWGLSWAPINTERVALEXTPROC)(int interval);
-
-static PFNGLGENBUFFERSPROC glGenBuffers;
-static PFNGLBINDBUFFERPROC glBindBuffer;
-static PFNGLBUFFERDATAPROC glBufferData;
-static PFNGLGENVERTEXARRAYSPROC glGenVertexArrays;
-static PFNGLBINDVERTEXARRAYPROC glBindVertexArray;
-static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray;
-static PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer;
-static PFNGLCREATESHADERPROC glCreateShader;
-static PFNGLSHADERSOURCEPROC glShaderSource;
-static PFNGLCOMPILESHADERPROC glCompileShader;
-static PFNGLCREATEPROGRAMPROC glCreateProgram;
-static PFNGLATTACHSHADERPROC glAttachShader;
-static PFNGLLINKPROGRAMPROC glLinkProgram;
-static PFNGLUSEPROGRAMPROC glUseProgram;
-static PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation;
-static PFNGLUNIFORM3FPROC glUniform3f;
-static PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv;
-static PFNGLBUFFERSUBDATAPROC glBufferSubData;
-static PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT;
-
-void Renderer::LoadOpenGLFunctions() {
-    // Suppress GCC's cast-function-type warnings for WGL-proc casts in this function only
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-function-type"
-#endif
-    glGenBuffers = (PFNGLGENBUFFERSPROC)wglGetProcAddress("glGenBuffers");
-    glBindBuffer = (PFNGLBINDBUFFERPROC)wglGetProcAddress("glBindBuffer");
-    glBufferData = (PFNGLBUFFERDATAPROC)wglGetProcAddress("glBufferData");
-    glGenVertexArrays = (PFNGLGENVERTEXARRAYSPROC)wglGetProcAddress("glGenVertexArrays");
-    glBindVertexArray = (PFNGLBINDVERTEXARRAYPROC)wglGetProcAddress("glBindVertexArray");
-    glEnableVertexAttribArray =
-        (PFNGLENABLEVERTEXATTRIBARRAYPROC)wglGetProcAddress("glEnableVertexAttribArray");
-    glVertexAttribPointer =
-        (PFNGLVERTEXATTRIBPOINTERPROC)wglGetProcAddress("glVertexAttribPointer");
-    glCreateShader = (PFNGLCREATESHADERPROC)wglGetProcAddress("glCreateShader");
-    glShaderSource = (PFNGLSHADERSOURCEPROC)wglGetProcAddress("glShaderSource");
-    glCompileShader = (PFNGLCOMPILESHADERPROC)wglGetProcAddress("glCompileShader");
-    glCreateProgram = (PFNGLCREATEPROGRAMPROC)wglGetProcAddress("glCreateProgram");
-    glAttachShader = (PFNGLATTACHSHADERPROC)wglGetProcAddress("glAttachShader");
-    glLinkProgram = (PFNGLLINKPROGRAMPROC)wglGetProcAddress("glLinkProgram");
-    glUseProgram = (PFNGLUSEPROGRAMPROC)wglGetProcAddress("glUseProgram");
-    glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC)wglGetProcAddress("glGetUniformLocation");
-    glUniform3f = (PFNGLUNIFORM3FPROC)wglGetProcAddress("glUniform3f");
-    glUniformMatrix4fv = (PFNGLUNIFORMMATRIX4FVPROC)wglGetProcAddress("glUniformMatrix4fv");
-    glBufferSubData = (PFNGLBUFFERSUBDATAPROC)wglGetProcAddress("glBufferSubData");
-    wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-}
-
-bool Renderer::Initialize(HWND hwnd) {
+bool Renderer::Initialize(GLFWwindow* win) {
     srand((unsigned int)time(nullptr));
-    hdc = GetDC(hwnd);
-    // Diagnose whether the ImGui code path is compiled in this TU
-#ifdef USE_IMGUI
-    LOG_INFO("[renderer.cpp] USE_IMGUI is defined");
-#else
-    LOG_WARN("[renderer.cpp] USE_IMGUI is NOT defined");
-#endif
-
-    PIXELFORMATDESCRIPTOR pfd = {sizeof(PIXELFORMATDESCRIPTOR),
-                                 1,
-                                 PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
-                                 PFD_TYPE_RGBA,
-                                 32,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 0,
-                                 24,
-                                 8,
-                                 0,
-                                 PFD_MAIN_PLANE,
-                                 0,
-                                 0,
-                                 0,
-                                 0};
-
-    int pixelFormat = ChoosePixelFormat(hdc, &pfd);
-    SetPixelFormat(hdc, pixelFormat, &pfd);
-
-    hglrc = wglCreateContext(hdc);
-    wglMakeCurrent(hdc, hglrc);
-
-    LoadOpenGLFunctions();
+    window = win;
 
     const char* gl_version = (const char*)glGetString(GL_VERSION);
     const char* gl_renderer = (const char*)glGetString(GL_RENDERER);
@@ -164,46 +29,14 @@ bool Renderer::Initialize(HWND hwnd) {
     LOG_INFO("OpenGL Renderer: %s", gl_renderer ? gl_renderer : "<null>");
     LOG_INFO("OpenGL Vendor: %s", gl_vendor ? gl_vendor : "<null>");
 
-    const char* vertexShaderSource = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        layout (location = 1) in vec3 aColor;
-        uniform mat4 uView;
-        uniform mat4 uProjection;
-        uniform vec3 uColor;
-        out vec3 vertexColor;
-        void main() {
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-            vertexColor = aColor * uColor;
-        }
-    )";
-
-    const char* fragmentShaderSource = R"(
-        #version 330 core
-        in vec3 vertexColor;
-        out vec4 FragColor;
-        void main() {
-            FragColor = vec4(vertexColor, 1.0);
-        }
-    )";
-
-    shaderProgram = CreateShader(vertexShaderSource, fragmentShaderSource);
+    shaderProgram = CreateShaderFromFiles("terrain.vert", "terrain.frag");
     CreateGrid();
     CreateCube();
     CreateCrosshair();
 
     glEnable(GL_DEPTH_TEST);
 
-    // Enable VSync to prevent tearing and reduce flickering
-    if (wglSwapIntervalEXT) {
-        wglSwapIntervalEXT(1);
-    }
-
-#ifdef USE_IMGUI
-    LOG_INFO("Initializing ImGui...");
-    InitImGui(hwnd);
-    LOG_INFO("ImGui initialized.");
-#endif
+    // VSync handled via glfwSwapInterval in window
 
     return true;
 }
@@ -223,6 +56,41 @@ unsigned int Renderer::CreateShader(const char* vertexSource, const char* fragme
     glLinkProgram(program);
 
     return program;
+}
+
+std::string Renderer::ReadTextFile(const char* path) {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs.is_open())
+        return {};
+    std::ostringstream ss;
+    ss << ifs.rdbuf();
+    return ss.str();
+}
+
+unsigned int Renderer::CreateShaderFromFiles(const char* vertexPath, const char* fragmentPath) {
+#ifdef SHADER_DIR
+    std::string vpath = std::string(SHADER_DIR) + "/" + vertexPath;
+    std::string fpath = std::string(SHADER_DIR) + "/" + fragmentPath;
+#else
+    std::string vpath = vertexPath;
+    std::string fpath = fragmentPath;
+#endif
+    std::string vsrc = ReadTextFile(vpath.c_str());
+    std::string fsrc = ReadTextFile(fpath.c_str());
+    if (vsrc.empty() || fsrc.empty()) {
+        LOG_ERROR("Failed to load shaders: %s, %s", vpath.c_str(), fpath.c_str());
+        // Fallback minimal shaders
+        const char* vs =
+            "#version 330 core\nlayout(location=0) in vec3 aPos; layout(location=1) in vec3 "
+            "aColor; uniform mat4 uView; uniform mat4 uProjection; uniform vec3 uColor; out vec3 "
+            "vertexColor; void main(){ gl_Position=uProjection*uView*vec4(aPos,1.0); "
+            "vertexColor=aColor*uColor; }";
+        const char* fs =
+            "#version 330 core\nin vec3 vertexColor; out vec4 FragColor; void main(){ "
+            "FragColor=vec4(vertexColor,1.0); }";
+        return CreateShader(vs, fs);
+    }
+    return CreateShader(vsrc.c_str(), fsrc.c_str());
 }
 
 float Renderer::SimpleNoise(float x, float y) {
@@ -386,17 +254,16 @@ void Renderer::CreateCube() {
 }
 
 void Renderer::CreateCrosshair() {
-    float vertices[] = {-0.01f, 0.0f, 0.0f, 1.0f,  1.0f, 1.0f,   0.01f, 0.0f,
-                        0.0f,   1.0f, 1.0f, 1.0f,  0.0f, -0.01f, 0.0f,  1.0f,
-                        1.0f,   1.0f, 0.0f, 0.01f, 0.0f, 1.0f,   1.0f,  1.0f};
-
+    // Initialize an empty VBO; we'll fill it each frame to maintain fixed pixel size
+    float vertices[24] = {0};
     unsigned int VBO;
     glGenVertexArrays(1, &crosshairVAO);
     glGenBuffers(1, &VBO);
+    crosshairVBO = VBO;
 
     glBindVertexArray(crosshairVAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
@@ -452,21 +319,33 @@ void Renderer::Render(const Camera& camera, Color& color) {
         camera.x * cosPitch * sinYaw - camera.y * sinPitch - camera.z * cosPitch * cosYaw,
         1.0f};
 
-    float projMatrix[16] = {1.5f,
+    // Build perspective projection based on current viewport aspect ratio
+    GLint viewportForProj[4];
+    glGetIntegerv(GL_VIEWPORT, viewportForProj);
+    int projW = viewportForProj[2];
+    int projH = viewportForProj[3];
+    float aspect = (projH != 0) ? (float)projW / (float)projH : 1.0f;
+    float fovY = 60.0f * (3.1415926535f / 180.0f);
+    float f = 1.0f / tanf(fovY * 0.5f);
+    float zNear = 0.1f;
+    float zFar = 100.0f;
+    float A = (zFar + zNear) / (zNear - zFar);
+    float B = (2.0f * zFar * zNear) / (zNear - zFar);
+    float projMatrix[16] = {f / aspect,
                             0.0f,
                             0.0f,
                             0.0f,
                             0.0f,
-                            2.0f,
+                            f,
                             0.0f,
                             0.0f,
                             0.0f,
                             0.0f,
-                            -1.002f,
+                            A,
                             -1.0f,
                             0.0f,
                             0.0f,
-                            -0.2002f,
+                            B,
                             0.0f};
 
     glUseProgram(shaderProgram);
@@ -503,52 +382,77 @@ void Renderer::Render(const Camera& camera, Color& color) {
     float ndcCubeX = clip2[0] / clip2[3];
     float ndcCubeY = clip2[1] / clip2[3];
 
-    // Get cursor position in client area to NDC using actual GL viewport
+    // Get cursor position in client area to NDC using actual GL viewport (GLFW)
     GLint viewport[4];
-    glGetIntegerv(0x0BA2 /* GL_VIEWPORT */, viewport);
+    glGetIntegerv(GL_VIEWPORT, viewport);
     int vpX = viewport[0];
     int vpY = viewport[1];
     int vpW = viewport[2];
     int vpH = viewport[3];
-    POINT p;
-    GetCursorPos(&p);
-    HWND win = WindowFromDC(hdc);
-    if (!win)
-        return;
-    ScreenToClient(win, &p);
-    // Client Y origin is top-left; convert to bottom-left for GL mapping
-    RECT rc;
-    GetClientRect(win, &rc);
-    int pGLY = (rc.bottom - p.y) - vpY;  // relative to GL bottom-left
-    int pGLX = p.x - vpX;
-    if (pGLX < 0) {
-        pGLX = 0;
+    float ndcCursorX = 0.0f, ndcCursorY = 0.0f;
+    int cursorMode = glfwGetInputMode(window, GLFW_CURSOR);
+    if (cursorMode != GLFW_CURSOR_DISABLED) {
+        // Cursor visible: map to NDC with HiDPI scaling
+        double cx = 0.0, cy = 0.0;
+        glfwGetCursorPos(window, &cx, &cy);
+        int winW = 0, winH = 0;
+        glfwGetWindowSize(window, &winW, &winH);
+        int fbW = 0, fbH = 0;
+        glfwGetFramebufferSize(window, &fbW, &fbH);
+        double scaleX = winW > 0 ? (double)fbW / (double)winW : 1.0;
+        double scaleY = winH > 0 ? (double)fbH / (double)winH : 1.0;
+        double px = cx * scaleX;
+        double py = cy * scaleY;
+        // Convert to GL bottom-left origin and account for viewport offset
+        double pGLX = px - vpX;
+        double pGLY = (fbH - py) - vpY;
+        if (pGLX < 0)
+            pGLX = 0;
+        if (pGLX > vpW)
+            pGLX = vpW;
+        if (pGLY < 0)
+            pGLY = 0;
+        if (pGLY > vpH)
+            pGLY = vpH;
+        ndcCursorX = (float)(pGLX / (double)vpW * 2.0 - 1.0);
+        ndcCursorY = (float)(pGLY / (double)vpH * 2.0 - 1.0);
+    } else {
+        // Cursor captured: tracer should originate from crosshair at the screen center
+        ndcCursorX = 0.0f;
+        ndcCursorY = 0.0f;
     }
-    if (pGLX > vpW) {
-        pGLX = vpW;
-    }
-    if (pGLY < 0) {
-        pGLY = 0;
-    }
-    if (pGLY > vpH) {
-        pGLY = vpH;
-    }
-    float ndcCursorX = (pGLX / (float)vpW) * 2.0f - 1.0f;
-    float ndcCursorY = (pGLY / (float)vpH) * 2.0f - 1.0f;
 
-    // Update and draw tracer as overlay in screen space
+    // Update and draw tracer as overlay in screen space (disable depth test so it draws on top)
     UpdateTracerNDC(ndcCursorX, ndcCursorY, ndcCubeX, ndcCubeY);
     float identityMatrix[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, identityMatrix);
     glUniformMatrix4fv(projLoc, 1, GL_FALSE, identityMatrix);
+    GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+    if (depthWasEnabled)
+        glDisable(GL_DEPTH_TEST);
     glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);
     glBindVertexArray(tracerVAO);
     glDrawArrays(GL_LINES, 0, 2);
 
-    // Draw crosshair (screen space)
-    // identity matrices already set
-    glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);
+    // Draw crosshair (screen space) with fixed pixel size regardless of aspect
+    // Compute NDC size based on current viewport dimensions
+    GLint vp2[4];
+    glGetIntegerv(GL_VIEWPORT, vp2);
+    int vpW2 = vp2[2];
+    int vpH2 = vp2[3];
+    // Desired crosshair half-length in pixels
+    const float halfLenPx = 8.0f;
+    float dx = (vpW2 > 0) ? (halfLenPx / (float)vpW2) * 2.0f : 0.02f;
+    float dy = (vpH2 > 0) ? (halfLenPx / (float)vpH2) * 2.0f : 0.02f;
+    // Two lines centered at origin
+    float ch[24] = {
+        -dx,  0.0f, 0.0f, 1, 1, 1, dx,   0.0f, 0.0f, 1, 1, 1,
+        0.0f, -dy,  0.0f, 1, 1, 1, 0.0f, dy,   0.0f, 1, 1, 1,
+    };
     glBindVertexArray(crosshairVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, crosshairVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(ch), ch);
+    glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);
     glDrawArrays(GL_LINES, 0, 4);
     // Reset OpenGL state
     glUseProgram(0);
@@ -556,121 +460,12 @@ void Renderer::Render(const Camera& camera, Color& color) {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-#ifdef USE_IMGUI
-    // Setup OpenGL state for ImGui
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_DEPTH_TEST);
+    if (depthWasEnabled)
+        glEnable(GL_DEPTH_TEST);
 
-    RenderImGui(camera, color);
-
-    // Restore OpenGL state
-    glDisable(GL_BLEND);
-    glEnable(GL_DEPTH_TEST);
-#endif
+    // ImGui UI pass (if enabled) handled from main loop or here optionally
 }
 
 void Renderer::Cleanup() {
-#ifdef USE_IMGUI
-    ShutdownImGui();
-#endif
-    wglMakeCurrent(NULL, NULL);
-    wglDeleteContext(hglrc);
-    ReleaseDC(GetActiveWindow(), hdc);
+    // Nothing to do here for GLFW-managed context
 }
-
-void Renderer::Present() {
-    SwapBuffers(hdc);
-}
-
-#ifdef USE_IMGUI
-void Renderer::InitImGui(HWND hwnd) {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-    ImGui::StyleColorsDark();
-
-    ImGui_ImplWin32_Init(hwnd);
-    // Pick a safe GLSL version string based on current GL version to avoid invisible UI due to
-    // shader compile failure
-    const char* glsl_version = "#version 130";  // default safe choice for GL 3.0+
-    const char* gl_ver = (const char*)glGetString(GL_VERSION);
-    if (gl_ver) {
-        int major = 0, minor = 0;
-        // Parse strings like "4.6.0 ..." or "3.3.0 ..." or "2.1.0 ..."
-        if (sscanf(gl_ver, "%d.%d", &major, &minor) == 2) {
-            if (major < 3) {
-                glsl_version = "#version 120";  // GL 2.1
-            } else if (major == 3 && minor == 0) {
-                glsl_version = "#version 130";  // GL 3.0
-            } else if (major == 3 && minor == 1) {
-                glsl_version = "#version 140";  // GL 3.1
-            } else if (major == 3 && minor == 2) {
-                glsl_version = "#version 150";  // GL 3.2
-            } else if (major >= 3) {
-                glsl_version =
-                    "#version 150";  // good for 3.2+; backend does not require core profile
-            }
-        }
-    }
-    LOG_INFO("ImGui GL3 init with GLSL: %s", glsl_version);
-    ImGui_ImplOpenGL3_Init(glsl_version);
-}
-
-void Renderer::RenderImGui(const Camera& camera, Color& color) {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplWin32_NewFrame();
-    ImGui::NewFrame();
-
-    // Controls window
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(300, 150), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Controls");
-    ImGui::Text("Camera: (%.2f, %.2f, %.2f)", camera.x, camera.y, camera.z);
-    ImGui::ColorEdit3("Cube Color", &color.r);
-    ImGui::Text("Press ESC to toggle mouse capture.");
-    ImGui::End();
-
-    // Log window
-    static bool show_logs = true;
-    if (show_logs) {
-        ImGui::SetNextWindowPos(ImVec2(10, 170), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Logs", &show_logs);
-
-        static bool auto_scroll = true;
-        ImGui::Checkbox("Auto-scroll", &auto_scroll);
-        ImGui::SameLine();
-        if (ImGui::Button("Clear")) {
-            // Clear is handled by getting fresh logs
-        }
-
-        ImGui::Separator();
-        ImGui::BeginChild(
-            "LogScrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-
-        auto logs = logging::GetRecentLogs(200);
-        for (const auto& log : logs) {
-            ImGui::TextUnformatted(log.c_str());
-        }
-
-        if (auto_scroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
-            ImGui::SetScrollHereY(1.0f);
-        }
-
-        ImGui::EndChild();
-        ImGui::End();
-    }
-
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-}
-
-void Renderer::ShutdownImGui() {
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
-}
-#endif

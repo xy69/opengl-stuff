@@ -1,15 +1,21 @@
 #pragma once
-#include <windows.h>
+
+struct GLFWwindow;  // forward declaration
 
 class Window {
   public:
-    bool Create(HINSTANCE hInstance, int nCmdShow);
+    // Create a window and OpenGL context
+    bool Create(int width = 800, int height = 600, const char* title = "OpenGL Terrain");
+    // Main loop
     void Run();
-    HWND GetHandle() const {
-        return hwnd;
+    // Access to the native GLFW window pointer
+    GLFWwindow* GetHandle() const {
+        return window;
     }
 
   private:
-    HWND hwnd;
-    static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    GLFWwindow* window = nullptr;
+    bool mouseCaptured = false;
+    double lastMouseX = 0.0, lastMouseY = 0.0;
+    void ToggleMouseCapture(bool capture);
 };

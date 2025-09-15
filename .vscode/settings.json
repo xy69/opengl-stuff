@@ -1,4 +1,9 @@
 {
+  "cmake.copyCompileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.errorSquiggles": "enabled",
+  "cmake.generator": "MinGW Makefiles",
   "cmake.useCMakePresets": "auto",
   "cmake.configureOnOpen": true,
   "editor.formatOnSave": true

@@ -1,53 +1,85 @@
 cmake_minimum_required(VERSION 3.20)
-
-# Project setup
 project(OpenGLTerrain LANGUAGES CXX)
 
-# Use C++23
+# C++ standard and tooling
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Export compile_commands.json for clang-tidy/clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Options
-option(ENABLE_IMGUI "Build with Dear ImGui UI" ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "")
 option(ENABLE_CLANG_TIDY "Run clang-tidy during build if available" ON)
 
-# Gather sources (keep vendor code explicit; avoid formatting/tidy on third_party by default)
-file(GLOB APP_SOURCES CONFIGURE_DEPENDS
-    src/*.cpp
-)
+# Dependencies
+include(FetchContent)
 
-set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+FetchContent_Declare(glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG 3.4)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(glfw)
+
+FetchContent_Declare(glew
+    GIT_REPOSITORY https://github.com/Perlmint/glew-cmake.git
+    GIT_TAG master)
+set(glew-cmake_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(glew)
+
+find_package(OpenGL REQUIRED)
+
+# Suppress warnings from external dependencies during their own compilation
+if(MSVC)
+    target_compile_options(glfw PRIVATE /W0)
+    target_compile_options(libglew_static PRIVATE /W0)
+else()
+    target_compile_options(glfw PRIVATE -w)
+    target_compile_options(libglew_static PRIVATE -w)
+endif()
+
+file(GLOB APP_SOURCES CONFIGURE_DEPENDS src/*.cpp)
+
+# Dear ImGui: always fetch from upstream and build with GLFW + OpenGL3 backends
+FetchContent_Declare(imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.91.0)
+FetchContent_MakeAvailable(imgui)
+set(IMGUI_DIR ${imgui_SOURCE_DIR})
 set(IMGUI_BACKENDS_DIR ${IMGUI_DIR}/backends)
 
-if(ENABLE_IMGUI)
-    list(APPEND APP_SOURCES
-        ${IMGUI_DIR}/imgui.cpp
-        ${IMGUI_DIR}/imgui_demo.cpp
-        ${IMGUI_DIR}/imgui_draw.cpp
-        ${IMGUI_DIR}/imgui_tables.cpp
-        ${IMGUI_DIR}/imgui_widgets.cpp
-        ${IMGUI_BACKENDS_DIR}/imgui_impl_win32.cpp
-        ${IMGUI_BACKENDS_DIR}/imgui_impl_opengl3.cpp
-    )
-endif()
-
-# Executable: WIN32 to use WinMain and avoid console window
-add_executable(${PROJECT_NAME} WIN32 ${APP_SOURCES})
-
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${IMGUI_DIR}
-        ${IMGUI_BACKENDS_DIR}
+set(IMGUI_SOURCES
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_BACKENDS_DIR}/imgui_impl_opengl3.cpp
+    ${IMGUI_BACKENDS_DIR}/imgui_impl_glfw.cpp
 )
 
-if(ENABLE_IMGUI)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_IMGUI)
+add_definitions(-DUSE_IMGUI)
+message(STATUS "ImGui fetched and enabled (GLFW + OpenGL3 backends)")
+
+# Suppress warnings for ImGui sources compiled into our target
+if(MSVC)
+    set(IMGUI_NO_WARN_FLAGS "/W0 /WX-")
+else()
+    set(IMGUI_NO_WARN_FLAGS "-w -Wno-error")
 endif()
+set_source_files_properties(${IMGUI_SOURCES} PROPERTIES COMPILE_FLAGS "${IMGUI_NO_WARN_FLAGS}")
+
+add_executable(${PROJECT_NAME} ${APP_SOURCES} ${IMGUI_SOURCES})
+
+target_include_directories(${PROJECT_NAME}
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    SYSTEM PRIVATE
+        ${IMGUI_DIR} ${IMGUI_BACKENDS_DIR}
+        ${glfw_SOURCE_DIR}/include
+        ${glew_SOURCE_DIR}/include)
+
+# Ensure GLFW doesn't try to include legacy GL headers
+target_compile_definitions(${PROJECT_NAME} PRIVATE GLFW_INCLUDE_NONE)
 
 # Warnings
 if(MSVC)
@@ -59,19 +91,14 @@ else()
     endif()
 endif()
 
-# Link system libraries for Win32 + OpenGL
-if(WIN32)
-    target_link_libraries(${PROJECT_NAME}
-        PRIVATE
-            opengl32
-            gdi32
-            user32
-            shell32
-            imm32
-            dwmapi
-            ole32
-    )
-endif()
+# Link libraries
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE glfw OpenGL::GL libglew_static)
+
+# Provide shader directory to the program (absolute path to source shaders, normalized)
+set(SHADERS_ABS "${CMAKE_SOURCE_DIR}/shaders")
+file(TO_CMAKE_PATH "${SHADERS_ABS}" SHADERS_ABS_POSIX)
+target_compile_definitions(${PROJECT_NAME} PRIVATE SHADER_DIR="${SHADERS_ABS_POSIX}")
 
 # Clang-Tidy integration (optional)
 if(ENABLE_CLANG_TIDY)
@@ -102,3 +129,4 @@ endif()
 
 # Install (optional)
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders DESTINATION .)

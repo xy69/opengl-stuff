@@ -9,12 +9,23 @@
       "cppStandard": "c++23",
       "cStandard": "c17",
       "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "defines": ["GLFW_INCLUDE_NONE"],
+      "includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/shaders",
+        "${workspaceFolder}/build/_deps/glfw-src/include",
+        "${workspaceFolder}/build/_deps/glew-src/include",
+        "${workspaceFolder}/build/_deps/imgui-src",
+        "${workspaceFolder}/build/_deps/imgui-src/backends"
+      ],
       "browse": {
         "path": [
           "${workspaceFolder}",
           "${workspaceFolder}/include",
-          "${workspaceFolder}/third_party/imgui",
-          "${workspaceFolder}/third_party/imgui/backends"
+          "${workspaceFolder}/build/_deps/glfw-src/include",
+          "${workspaceFolder}/build/_deps/glew-src/include",
+          "${workspaceFolder}/build/_deps/imgui-src",
+          "${workspaceFolder}/build/_deps/imgui-src/backends"
         ]
       }
     }
