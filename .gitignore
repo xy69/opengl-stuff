@@ -1,0 +1,65 @@
+## Build artifacts
+build/
+build-debug/
+dist/
+out/
+bin/
+*.exe
+*.o
+*.obj
+*.lib
+*.dll
+*.a
+*.so
+*.dylib
+
+## CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+## Runtime files
+imgui.ini
+logs/
+*.log
+
+## Local configuration and secrets
+.env
+.env.*
+!.env.example
+.secret
+secrets.*
+*.crt
+*.pem
+*.pfx
+*.p12
+*.cer
+*.key
+
+## IDE/editor files
+.vscode/*
+!.vscode/c_cpp_properties.json
+!.vscode/settings.json
+!.vscode/tasks.json
+.vs/
+*.vcxproj*
+*.sln
+*.user
+*.code-workspace
+
+## OS files
+Thumbs.db
+.DS_Store
+
+## Debug/diagnostics
+*.pdb
+*.ilk
+*.map
+*.dmp

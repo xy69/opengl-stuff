@@ -1,0 +1,5 @@
+{
+  "cmake.useCMakePresets": "auto",
+  "cmake.configureOnOpen": true,
+  "editor.formatOnSave": true
+}
